@@ -1,6 +1,9 @@
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
+import os, sys
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
 import gym
 import gym_super_mario_bros
 from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
@@ -14,6 +17,8 @@ import time
 from collections import deque
 import argparse
 from typing import List
+
+from core.core import compute_ppo_loss
 
 def _find_nes_env(env):
     e = env
@@ -299,19 +304,10 @@ class PPO:
                 b_adv = advantages.view(-1)[idx]
                 b_ret = returns.view(-1)[idx]
 
-                logits, values = self.model(b_obs)
-                dist = Categorical(logits=logits)
-                new_lp = dist.log_prob(b_act)
-                entropy = dist.entropy().mean()
-
-                ratio = torch.exp(new_lp - b_old_lp)
-                pg_loss1 = -b_adv * ratio
-                pg_loss2 = -b_adv * torch.clamp(ratio, 1 - self.clip_eps, 1 + self.clip_eps)
-                pg_loss = torch.max(pg_loss1, pg_loss2).mean()
-
-                v_loss = 0.5 * (values - b_ret).pow(2).mean()
-
-                loss = pg_loss + self.value_coef * v_loss - self.entropy_coef * entropy
+                loss, pg_loss, v_loss, entropy = compute_ppo_loss(
+                    self.model, b_obs, b_act, b_old_lp, b_adv, b_ret,
+                    self.clip_eps, self.value_coef, self.entropy_coef,
+                )
 
                 self.optimizer.zero_grad()
                 loss.backward()
