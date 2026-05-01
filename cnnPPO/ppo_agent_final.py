@@ -7,6 +7,8 @@ Final Draft.
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
+import os, sys
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 import gym
 from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
@@ -16,9 +18,12 @@ import torch
 import torch.nn as nn
 from torch.distributions import Categorical
 
-from collections import deque
-
-from PIL import Image
+from core.core import (
+    compute_ppo_loss,
+    FrameStackWrapper,
+    GrayscaleResizeWrapper,
+    SkipWrapper,
+)
 
 #bridge
 class OldGymToGymnasium(gym.Env):
@@ -42,53 +47,6 @@ class OldGymToGymnasium(gym.Env):
 
     def close(self):
         self.env.close()
-
-
-#preprocess
-class GrayscaleResizeWrapper(gym.ObservationWrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(84, 84), dtype=np.float32)
-
-    def observation(self, obs):
-        img = Image.fromarray(obs).convert("L").resize((84, 84), Image.BILINEAR)
-        return np.array(img, dtype=np.float32) / 255.0
-
-
-class SkipWrapper(gym.Wrapper):
-    def __init__(self, env, skip=4):
-        super().__init__(env)
-        self._skip = skip
-
-    def step(self, action):
-        total_reward = 0.0
-        for _ in range(self._skip):
-            obs, reward, terminated, truncated, info = self.env.step(action)
-            total_reward += reward
-            if terminated or truncated:
-                break
-        return obs, total_reward, terminated, truncated, info
-
-
-class FrameStackWrapper(gym.Wrapper):
-    def __init__(self, env, n=4):
-        super().__init__(env)
-        self._n = n
-        self._frames = deque(maxlen=n)
-        self.observation_space = gym.spaces.Box(
-            low=0.0, high=1.0, shape=(n, 84, 84), dtype=np.float32
-        )
-
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        for _ in range(self._n):
-            self._frames.append(obs)
-        return np.stack(self._frames), info
-
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        self._frames.append(obs)
-        return np.stack(self._frames), reward, terminated, truncated, info
 
 
 # Custom shaped rewards (same as RAM)
@@ -284,22 +242,18 @@ class PPO:
             for start in range(0, flat_obs.shape[0], self.args.batch_size):
                 b = idx[start:start + self.args.batch_size]
 
-                # get current model distrubtion
-                logits, values = self.model(flat_obs[b])
-                dist = Categorical(logits=logits)
-                new_lp = dist.log_prob(flat_act[b])
-                entropy = dist.entropy().mean()
-
-                # compare current model dist to old model dist
-                ratio = torch.exp(new_lp - flat_lp[b])
-                pg_loss = torch.max(
-                    -flat_adv[b] * ratio,
-                    -flat_adv[b] * torch.clamp(ratio, 1 - self.args.clip_range, 1 + self.args.clip_range)
-                ).mean()
-
                 # calculate our loss
-                v_loss = 0.5 * (values - flat_ret[b]).pow(2).mean()
-                loss = pg_loss + self.args.vf_coef * v_loss - self.args.ent_coef * entropy
+                loss, pg_loss, v_loss, entropy = compute_ppo_loss(
+                    self.model,
+                    flat_obs[b],
+                    flat_act[b],
+                    flat_lp[b],
+                    flat_adv[b],
+                    flat_ret[b],
+                    self.args.clip_range,
+                    self.args.vf_coef,
+                    self.args.ent_coef,
+                )
 
                 # step and clip
                 self.optimizer.zero_grad()
@@ -315,4 +269,3 @@ class PPO:
 
         self.buffer.reset() # reset out buffer
         return total_pg / n_updates, total_v / n_updates, total_ent / n_updates
-
