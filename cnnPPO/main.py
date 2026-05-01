@@ -20,12 +20,14 @@ def train(args):
     print(f"Training CNN PPO on {device} | {args.num_envs} envs")
     os.makedirs("checkpoints", exist_ok=True)
 
+    # initialize model + vectorized env
     env = make_vec_env(num_envs=args.num_envs)
     model = ActorCritic(n_actions=env.single_action_space.n).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, eps=1e-5)
     buffer = RolloutBuffer(args.n_steps, args.num_envs, device)
     ppo = PPO(model, optimizer, buffer, args)
 
+    # tensorboard logging
     if not args.no_tb:
         from torch.utils.tensorboard import SummaryWriter
         writer = SummaryWriter(log_dir=f"runs/{args.run_name}")
@@ -35,6 +37,7 @@ def train(args):
     timestep = 0
     ep_count = 0
 
+    # used to resume training in case of disconnect / needing to stop for whatever reason
     if args.resume:
         ckpt = torch.load(args.resume, map_location=device)
         if "model" in ckpt:
@@ -46,6 +49,7 @@ def train(args):
             model.load_state_dict(ckpt)
         print(f"Resumed from {args.resume} at timestep {timestep:,}")
 
+    # setup initial values
     obs, _ = env.reset()
     obs = torch.tensor(obs, dtype=torch.float32, device=device)
 
@@ -58,14 +62,19 @@ def train(args):
 
     print(f"Starting training for {args.total_timesteps:,} timesteps...")
 
+    # training loop
     while timestep < args.total_timesteps:
         with torch.no_grad():
+
+            # fill our buffer for n_steps in the env
             for _ in range(args.n_steps):
+                # make some action and step through the environment to see what happens
                 actions, log_probs, _, values = model.get_action(obs)
 
                 next_obs, rewards, terminated, truncated, infos = env.step(actions.cpu().numpy())
                 dones = terminated | truncated
 
+                # store the experience in the buffer
                 buffer.store(
                     obs,
                     actions,
@@ -75,6 +84,7 @@ def train(args):
                     values,
                 )
 
+                # episode logging
                 ep_returns += rewards
                 for i, done in enumerate(dones):
                     if done:
@@ -82,16 +92,20 @@ def train(args):
                         ep_returns[i] = 0.0
                         ep_count += 1
 
+                # get the next observation tensor of the environment
                 obs = torch.tensor(next_obs, dtype=torch.float32, device=device)
                 timestep += args.num_envs
 
+                # if we have reached the end of training break
                 if timestep >= args.total_timesteps:
                     break
 
             _, last_values = model(obs)
 
+        # update our PPO
         pg_loss, v_loss, entropy = ppo.update(last_values)
 
+        # logging
         if writer:
             writer.add_scalar("train/pg_loss", pg_loss, timestep)
             writer.add_scalar("train/value_loss", v_loss, timestep)
