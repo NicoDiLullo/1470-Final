@@ -8,7 +8,7 @@ from PIL import Image
 
 
 class SkipWrapper(gym.Wrapper):
-    """Repeat the same action for `skip` frames and sum rewards."""
+    """Repeat the same action for 'skip' frames and sum rewards."""
 
     def __init__(self, env, skip=4):
         super().__init__(env)
