@@ -12,6 +12,9 @@ There are, however, a few important caveats.
 ## Poster
 [Here](https://docs.google.com/presentation/d/1q2TjukW4iPlxBO3WBwFGq5fGd6xwkAj9gHBWKH5mZqk/edit?usp=sharing) is a link to our poster. A PDF is also included in the repo (DLFinalPoster.pdf).
 
+## Playthrough Videos
+The pptx we presented with playthrough videos can be found [here](https://drive.google.com/drive/folders/1H6Rd_VW72AOp4M2yVPIHqIFJOPvsnYXq?usp=drive_link)
+
 ## Setup
 
 ```bash
