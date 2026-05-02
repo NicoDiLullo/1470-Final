@@ -1,3 +1,11 @@
+'''
+This is the RAM-based PPO agent. Instead of taking inputs from pixels (via a CNN),
+which is costly wrt to training and inference, we take input directly from exposed
+memory. This allows us to flatten our CNN to an MLP, and thus train 4x-ish faster (even
+though we needed to process about 2x more samples), and makes the end model way smaller
+and faster. See results.
+'''
+
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -31,8 +39,9 @@ def _find_nes_env(env):
 
 class RamFeatureWrapper(gym.ObservationWrapper):
     '''
-    Learning off of raw memory inputs was inefficient. Learn of a small subset instead.
-    Thanks to Claude for picking these out
+    Learning off of raw memory inputs was inefficient, as we discovered by trying to
+    do it, and not observing much learning in training. So, we decided to learn a small
+    subset instead. We used Claude to find and choose these addresses.
     '''
     # Confirmed RAM addresses from gym-super-mario-bros smb_env.py source:
     #   x_pos:       ram[0x6D]*256 + ram[0x86]
@@ -175,7 +184,13 @@ def make_single_env(level: str = "SuperMarioBros-1-1-v0"):
 
 def make_vec_env(num_envs: int = 8, levels: List[str] = None):
     '''
-    Vectorization is fun!
+    Vectorization enables massive training throughput increases, in both the CNN and RAM PPO.
+    PPO needs a lot of trajectory data for each update, and vectorized environments let you collect
+    that data much faster by not waiting on a single rollout. 
+
+    This let us acheive training FPS on the order of ~4000 for RAM PPO and ~1000 for CNN PPO.
+
+    TLDR: Vectorization is fun!
     '''
     if levels is None:
         levels = ["SuperMarioBros-1-1-v0"] * num_envs
@@ -187,7 +202,8 @@ def make_vec_env(num_envs: int = 8, levels: List[str] = None):
 
 class ActorCritic(nn.Module):
     '''
-    ActorCritic definition
+    ActorCritic definition. Super similar architecturally to what we have in our
+    CNN. 
     '''
     def __init__(self, obs_dim: int, n_actions: int):
         super().__init__()
@@ -218,7 +234,7 @@ class ActorCritic(nn.Module):
 
 class RolloutBuffer:
     '''
-    RolloutBuffer class
+    RolloutBuffer class. Very similar to CNN as well.
     '''
     def __init__(self, n_steps: int, obs_dim: int, num_envs: int, device: torch.device):
         self.n_steps = n_steps
@@ -263,7 +279,7 @@ class RolloutBuffer:
 
 class PPO:
     '''
-    PPO class
+    PPO class. Also similar to CNN. 
     '''
     def __init__(self, obs_dim: int, n_actions: int, device: torch.device,
                  lr: float = 2.5e-4, gamma: float = 0.99, lam: float = 0.95,
@@ -419,10 +435,10 @@ def train(args):
     print("Training complete! Model saved.")
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    '''
+    ArgParse stuff for ease of use (thanks Claude)
+    '''
     parser = argparse.ArgumentParser()
     parser.add_argument("--total-timesteps", type=int, default=5_000_000)
     parser.add_argument("--num-envs", type=int, default=8)
