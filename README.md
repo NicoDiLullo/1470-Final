@@ -15,6 +15,16 @@ There are, however, a few important caveats.
 ## Playthrough Videos
 The pptx we presented with playthrough videos can be found [here](https://drive.google.com/drive/folders/1H6Rd_VW72AOp4M2yVPIHqIFJOPvsnYXq?usp=drive_link)
 
+## General Repository Structure:
+
+
+## Other implementation details
+Our code is somewhat commented, and our writeup renders some of this redundant, but here are
+some interesting implementation details. 
+
+# RAM PPO
+
+
 ## Setup
 
 ```bash

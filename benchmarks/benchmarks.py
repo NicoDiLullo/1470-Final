@@ -1,9 +1,6 @@
-"""
-Fair comparison of RAM PPO vs CNN PPO:
-  - Both evaluated with their training-time env setup
-  - Raw game rewards (no shaping) for apples-to-apples comparison
-  - x_pos and completion rate are the primary metrics
-"""
+'''
+A comparison class for CNN and RAM based PPO.
+'''
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -21,11 +18,7 @@ from nes_py.wrappers import JoypadSpace
 from core.core import SkipWrapper, GrayscaleResizeWrapper, FrameStackWrapper
 from ramPPO.ram_ppo import ActorCritic as RamActorCritic, RamFeatureWrapper
 
-try:
-    from cnnPPO.cnn_ppo import ActorCritic as CnnActorCritic
-    CNN_AVAILABLE = True
-except ImportError:
-    CNN_AVAILABLE = False
+from cnnPPO.ppo_agent_final import ActorCritic as CnnActorCritic
 
 
 # ---------------------------------------------------------------------------
@@ -47,10 +40,6 @@ def make_cnn_eval_env():
     env = FrameStackWrapper(env, n=4)
     return env
 
-
-# ---------------------------------------------------------------------------
-# Evaluation helpers
-# ---------------------------------------------------------------------------
 
 def run_episodes(model, make_env_fn, n_episodes, greedy, device):
     results = []
@@ -132,7 +121,7 @@ def main(args):
     ram_model.load_state_dict(ram_ckpt["model"] if "model" in ram_ckpt else ram_ckpt)
     ram_model.eval()
 
-    run_cnn = CNN_AVAILABLE and args.cnn_checkpoint
+    run_cnn = bool(args.cnn_checkpoint)
     if run_cnn:
         cnn_model = CnnActorCritic(n_actions=7).to(device)
         cnn_ckpt = torch.load(args.cnn_checkpoint, map_location=device)
@@ -170,7 +159,7 @@ def main(args):
         summarise("RAM PPO  (128-dim RAM features)", ram_res)
         if run_cnn:
             cnn_res = run_episodes(cnn_model, make_cnn_eval_env, n, greedy, device)
-            summarise("CNN PPO  (4×84×84 pixels, skip=4)", cnn_res)
+            summarise("CNN PPO  (4x84x84 pixels, skip=4)", cnn_res)
 
     print(f"\n{'─'*60}\n")
 
@@ -178,6 +167,6 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ram-checkpoint", default=os.path.join(os.path.dirname(__file__), "..", "ramPPO", "ppo_final.pt"))
-    parser.add_argument("--cnn-checkpoint", default=os.path.join(os.path.dirname(__file__), "..", "models", "bestCNN.pt"))
+    parser.add_argument("--cnn-checkpoint", default=os.path.join(os.path.dirname(__file__), "..", "cnnPPO", "bestCNN.pt"))
     parser.add_argument("--episodes", type=int, default=10)
     main(parser.parse_args())
