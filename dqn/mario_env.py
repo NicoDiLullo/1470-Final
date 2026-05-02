@@ -131,10 +131,3 @@ def make_mario_env(level = "SuperMarioBros-v3", action_set =SIMPLE_MOVEMENT):
   return env
 
 
-# Quick sanity check
-test_env = make_mario_env()
-obs, info = test_env.reset()
-print("Wrapped observation shape:", obs.shape)  # Should be (4, 84, 84)
-test_env.close()
-
-
