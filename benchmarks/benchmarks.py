@@ -1,5 +1,12 @@
 '''
-A comparison class for CNN and RAM based PPO.
+A comparison script for CNN and RAM based PPO.
+
+This uses raw game rewards. Training used shaped rewards because Mario
+is sparse(ish) and painful otherwise, but evaluation should only focus on perf in the 
+real environment.
+
+Also not really sure if doing each w/ its custom shaped reward is a model or reward
+ablation (and least on completion).
 '''
 
 import warnings
@@ -21,10 +28,6 @@ from ramPPO.ram_ppo import ActorCritic as RamActorCritic, RamFeatureWrapper
 from cnnPPO.ppo_agent_final import ActorCritic as CnnActorCritic
 
 
-# ---------------------------------------------------------------------------
-# Eval envs (no reward shaping)
-# ---------------------------------------------------------------------------
-
 def make_ram_eval_env():
     env = gym.make("SuperMarioBros-1-1-v0", apply_api_compatibility=True)
     env = JoypadSpace(env, SIMPLE_MOVEMENT)
@@ -42,6 +45,13 @@ def make_cnn_eval_env():
 
 
 def run_episodes(model, make_env_fn, n_episodes, greedy, device):
+    '''
+    Run full Mario episodes and keep the stats that are useful for comparison.
+
+    We track raw reward, furthest x-position, flag completion (done %), episode length, and
+    per-step inference time. Greedy mode shows the model's favorite behavior; sampled
+    mode shows what it does when we let the learned policy stay stochastic.
+    '''
     results = []
     for _ in range(n_episodes):
         env = make_env_fn()
@@ -70,6 +80,10 @@ def run_episodes(model, make_env_fn, n_episodes, greedy, device):
 
 
 def inference_benchmark(model, obs_shape, device, n=5000):
+    '''
+    Time pure model forward passes without the emulator in the loop (trying to remove
+    the environment from the equation).
+    '''
     x = torch.rand(1, *obs_shape, device=device)
     with torch.no_grad():
         for _ in range(200):
@@ -89,6 +103,11 @@ def print_section(title):
 
 
 def summarise(label, results):
+    '''
+    Print the episode-level table plus aggregate stats.
+
+    S/o Claude for the formatting.
+    '''
     rewards = [r[0] for r in results]
     x_pos   = [r[1] for r in results]
     flags   = [r[2] for r in results]
@@ -108,10 +127,6 @@ def summarise(label, results):
     print(f"    Mean ep length   : {np.mean(steps):8.1f} steps  ±{np.std(steps):.1f}")
     print(f"    Inference latency: {np.mean(inf_ms):8.2f} ms/step")
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main(args):
     device = torch.device("cpu")
@@ -165,6 +180,9 @@ def main(args):
 
 
 if __name__ == "__main__":
+    '''
+    Argparse slop.
+    '''
     parser = argparse.ArgumentParser()
     parser.add_argument("--ram-checkpoint", default=os.path.join(os.path.dirname(__file__), "..", "ramPPO", "ppo_final.pt"))
     parser.add_argument("--cnn-checkpoint", default=os.path.join(os.path.dirname(__file__), "..", "cnnPPO", "bestCNN.pt"))
