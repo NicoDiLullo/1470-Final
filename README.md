@@ -82,7 +82,14 @@ conda activate csci1470
 **RAM PPO:**
 ```bash
 cd ramPPO
-python ram_ppo.py
+conda run --no-capture-output -n csci1470 python ram_ppo.py --num-envs 8 --no-tb
+```
+You should expect FPS on the order of 4400
+
+**CNN PPO:**
+```bash
+cd cnnPPO
+conda run --no-capture-output -n csci1470 main.py --num-envs 8 --no-tb
 ```
 
 Key options:
