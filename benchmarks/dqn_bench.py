@@ -1,6 +1,8 @@
 '''
 eval_dqn.py
 Evaluate the CNN DQN checkpoint and compare against RAM PPO and CNN PPO.
+Modified version of our benchmarks script to deal with the annoyingness of
+loading the DQN in.
 '''
 
 import warnings
