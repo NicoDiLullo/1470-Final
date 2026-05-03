@@ -24,6 +24,9 @@ some interesting implementation details.
 
 # RAM PPO
 
+# CNN PPO
+
+# DQN
 
 ## Setup
 
