@@ -29,6 +29,11 @@ from typing import List
 from core.core import compute_ppo_loss
 
 def _find_nes_env(env):
+    '''
+    NES RAM is buried somewhere in the Gym wrapper chain. This just walks inward 
+    until it finds the env that exposes the ram array, so the feature wrapper can
+    read memory directly instead of depending on whatever observation image Gym hands us.
+    '''
     e = env
     while e is not None:
         if hasattr(e, "ram"):
@@ -68,10 +73,22 @@ class RamFeatureWrapper(gym.ObservationWrapper):
         )
 
     def observation(self, obs):
+        '''
+        Convert the current NES RAM snapshot into a fixed 128-float observation.
+
+        Everything is normalized-ish into the range the MLP can digest easily. Most
+        values are confirmed addresses for things from the environment source, 
+        while the raw ranges are guesses/things that hold more than one attribute.
+
+        Again, these addresses were found with the help of Claude scraping. Thanks,
+        Claude!
+        
+        They've been documented below for my sanity.
+        '''
         ram = self._nes_env.ram
         features = []
 
-        # --- Mario position & motion (confirmed addresses) ---
+        # --- Mario position & motion ---
         mario_abs_x = int(ram[0x6D]) * 256 + int(ram[0x86])
         mario_screen_x = (int(ram[0x86]) - int(ram[0x071C])) % 256
         mario_y = int(ram[0x03B8])
@@ -138,7 +155,9 @@ class RamFeatureWrapper(gym.ObservationWrapper):
 class CustomRewardWrapper(gym.Wrapper):
     '''
     Learned through an accidental ablation (models weren't training) that you need custom
-    shaped rewards for Mario (the raw game rewards are too sparse)
+    shaped rewards for Mario (the raw game rewards are too sparse).
+
+    Writeup has a better explanation of this.
     '''
     def __init__(self, env):
         super().__init__(env)
@@ -147,6 +166,12 @@ class CustomRewardWrapper(gym.Wrapper):
         self.prev_score = 0
 
     def reset(self, **kwargs):
+        '''
+        Reset the reward bookkeeping at the same time as the environment.
+
+        The shaped reward depends on deltas from the previous frame, so these cached
+        values need to start from whatever the emulator reports after reset.
+        '''
         obs, info = self.env.reset(**kwargs)
         self.prev_x_pos = info.get("x_pos", 0)
         self.prev_coins = info.get("coins", 0)
@@ -154,6 +179,11 @@ class CustomRewardWrapper(gym.Wrapper):
         return obs, info
 
     def step(self, action):
+        '''
+        Take one environment step, then replace the raw reward with our shaped one.
+
+        Again, our writeup talks more about this.
+        '''
         obs, reward, terminated, truncated, info = self.env.step(action)
 
         x_reward = (info.get("x_pos", 0) - self.prev_x_pos) * 1.0
@@ -173,8 +203,9 @@ class CustomRewardWrapper(gym.Wrapper):
 
 
 def make_single_env(level: str = "SuperMarioBros-1-1-v0"):
-    # apply_api_compatibility converts old 4-value step to new 5-value form
-    # at the gym.make level, so all outer wrappers see new-style API
+    '''
+    Build one Mario env with the wrapper stack used for RAM PPO training.
+    '''
     env = gym.make(level, apply_api_compatibility=True)
     env = JoypadSpace(env, SIMPLE_MOVEMENT)
     env = RamFeatureWrapper(env)
@@ -203,7 +234,11 @@ def make_vec_env(num_envs: int = 8, levels: List[str] = None):
 class ActorCritic(nn.Module):
     '''
     ActorCritic definition. Super similar architecturally to what we have in our
-    CNN. 
+    CNN.
+
+    The difference is that the shared encoder is just an MLP now, because RAM features
+    are already flat. The actor head chooses actions, the critic head estimates state
+    value, and orthogonal init helps keep PPO updates sane early in training.
     '''
     def __init__(self, obs_dim: int, n_actions: int):
         super().__init__()
@@ -226,6 +261,10 @@ class ActorCritic(nn.Module):
         nn.init.zeros_(self.critic.bias)
 
     def forward(self, x):
+        '''
+        Run one batch of observations through the shared MLP, then split into policy
+        logits and value estimates.
+        '''
         h = self.shared(x)
         logits = self.actor(h)
         value = self.critic(h).squeeze(-1)
@@ -235,6 +274,9 @@ class ActorCritic(nn.Module):
 class RolloutBuffer:
     '''
     RolloutBuffer class. Very similar to CNN as well.
+
+    PPO is on-policy, so it collects a chunk of trajectories, updates on that chunk a
+    few times, and then throws it away. This buffer is that chunk.
     '''
     def __init__(self, n_steps: int, obs_dim: int, num_envs: int, device: torch.device):
         self.n_steps = n_steps
@@ -249,6 +291,7 @@ class RolloutBuffer:
         self.ptr = 0
 
     def store(self, obs, actions, log_probs, rewards, dones, values):
+        #Store one vectorized timestep.
         self.obs[self.ptr] = obs
         self.actions[self.ptr] = actions
         self.log_probs[self.ptr] = log_probs
@@ -264,6 +307,9 @@ class RolloutBuffer:
         self.ptr = 0
 
     def compute_returns(self, last_values: torch.Tensor, gamma: float, lam: float):
+        '''
+        Compute GAE advantages and bootstrapped returns.
+        '''
         advantages = torch.zeros(self.n_steps, self.num_envs, device=self.device)
         last_gae = torch.zeros(self.num_envs, device=self.device)
         for t in reversed(range(self.n_steps)):
@@ -279,7 +325,8 @@ class RolloutBuffer:
 
 class PPO:
     '''
-    PPO class. Also similar to CNN. 
+    PPO class. Also similar to CNN. Model, optimizer, rollout buffer settings, and 
+    the update step.
     '''
     def __init__(self, obs_dim: int, n_actions: int, device: torch.device,
                  lr: float = 2.5e-4, gamma: float = 0.99, lam: float = 0.95,
@@ -303,6 +350,14 @@ class PPO:
         self.buffer = None
 
     def update(self, last_values: torch.Tensor):
+        '''
+        Run PPO optimization over the most recent rollout.
+
+        We flatten [time, env] into one big batch, shuffle it, and make several passes
+        over mini-batches. compute_ppo_loss does the clipped objective math shared with
+        the CNN agent, while this method handles batching, gradient clipping, optimizer
+        steps, and returning metrics for TensorBoard / console logs.
+        '''
         advantages, returns = self.buffer.compute_returns(last_values, self.gamma, self.lam)
 
         total_pg_loss = total_v_loss = total_ent = 0.0
@@ -341,7 +396,7 @@ class PPO:
 
 def train(args):
     '''
-    Training loop
+    Training loop for RAM PPO. Entropy is decayed over time. 
     '''
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training on {device} | {args.num_envs} parallel environments")
@@ -437,7 +492,11 @@ def train(args):
 
 if __name__ == "__main__":
     '''
-    ArgParse stuff for ease of use (thanks Claude)
+    ArgParse stuff for ease of use (thanks Claude).
+
+    Defaults are set for the main RAM PPO run, but the flags make it easy to do smaller
+    smoke tests, resume from a checkpoint, or turn off TensorBoard when running on a
+    machine where logs are annoying.
     '''
     parser = argparse.ArgumentParser()
     parser.add_argument("--total-timesteps", type=int, default=5_000_000)
