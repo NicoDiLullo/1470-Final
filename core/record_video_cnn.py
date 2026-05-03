@@ -6,6 +6,19 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import argparse
+import os
+import sys
+
+#this was tweaked slightly using Claude to get it to run with the new repo
+#config
+_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_script_dir = os.path.abspath(os.path.dirname(__file__))
+while _script_dir in sys.path:
+    sys.path.remove(_script_dir)
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+#end
+
 import numpy as np
 import torch
 import imageio
@@ -16,7 +29,7 @@ from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
 from nes_py.wrappers import JoypadSpace
 from torch.distributions import Categorical
 
-from cnn_ppo import ActorCritic
+from cnnPPO.ppo_agent_final import ActorCritic
 
 
 def _find_nes_env(env):
