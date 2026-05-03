@@ -12,120 +12,22 @@ ablation (and least on completion).
 import warnings
 warnings.filterwarnings("ignore")
 
-import os, sys, time, argparse
+import os, sys, argparse
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-import numpy as np
 import torch
-from torch.distributions import Categorical
-import gym
-from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
-from nes_py.wrappers import JoypadSpace
 
-from core.core import SkipWrapper, GrayscaleResizeWrapper, FrameStackWrapper
-from ramPPO.ram_ppo import ActorCritic as RamActorCritic, RamFeatureWrapper
+from core.core import (
+    inference_benchmark,
+    make_cnn_eval_env,
+    make_ram_eval_env,
+    print_section,
+    run_episodes_ppo as run_episodes,
+    summarise,
+)
+from ramPPO.ram_ppo import ActorCritic as RamActorCritic
 
 from cnnPPO.ppo_agent_final import ActorCritic as CnnActorCritic
-
-
-def make_ram_eval_env():
-    env = gym.make("SuperMarioBros-1-1-v0", apply_api_compatibility=True)
-    env = JoypadSpace(env, SIMPLE_MOVEMENT)
-    env = RamFeatureWrapper(env)
-    return env
-
-
-def make_cnn_eval_env():
-    env = gym.make("SuperMarioBros-1-1-v0", apply_api_compatibility=True)
-    env = JoypadSpace(env, SIMPLE_MOVEMENT)
-    env = SkipWrapper(env, skip=4)
-    env = GrayscaleResizeWrapper(env)
-    env = FrameStackWrapper(env, n=4)
-    return env
-
-
-def run_episodes(model, make_env_fn, n_episodes, greedy, device):
-    '''
-    Run full Mario episodes and keep the stats that are useful for comparison.
-
-    We track raw reward, furthest x-position, flag completion (done %), episode length, and
-    per-step inference time. Greedy mode shows the model's favorite behavior; sampled
-    mode shows what it does when we let the learned policy stay stochastic.
-    '''
-    results = []
-    for _ in range(n_episodes):
-        env = make_env_fn()
-        obs, _ = env.reset()
-        done, ep_reward, max_x, steps = False, 0.0, 0, 0
-        inf_times = []
-
-        while not done:
-            obs_t = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
-            t0 = time.perf_counter()
-            with torch.no_grad():
-                logits, _ = model(obs_t)
-            inf_times.append(time.perf_counter() - t0)
-
-            action = logits.argmax(-1).item() if greedy else Categorical(logits=logits).sample().item()
-            obs, reward, terminated, truncated, info = env.step(action)
-            ep_reward += reward
-            max_x = max(max_x, info.get("x_pos", 0))
-            done = terminated or truncated
-            steps += 1
-
-        results.append((ep_reward, max_x, info.get("flag_get", False), steps, inf_times))
-        env.close()
-
-    return results
-
-
-def inference_benchmark(model, obs_shape, device, n=5000):
-    '''
-    Time pure model forward passes without the emulator in the loop (trying to remove
-    the environment from the equation).
-    '''
-    x = torch.rand(1, *obs_shape, device=device)
-    with torch.no_grad():
-        for _ in range(200):
-            model(x)
-    t0 = time.perf_counter()
-    with torch.no_grad():
-        for _ in range(n):
-            model(x)
-    elapsed = time.perf_counter() - t0
-    return n / elapsed, elapsed / n * 1e6
-
-
-def print_section(title):
-    print(f"\n{'─'*60}")
-    print(f"  {title}")
-    print(f"{'─'*60}")
-
-
-def summarise(label, results):
-    '''
-    Print the episode-level table plus aggregate stats.
-
-    S/o Claude for the formatting.
-    '''
-    rewards = [r[0] for r in results]
-    x_pos   = [r[1] for r in results]
-    flags   = [r[2] for r in results]
-    steps   = [r[3] for r in results]
-    inf_ms  = [t * 1e3 for r in results for t in r[4]]
-
-    print(f"\n  {label}")
-    print(f"    {'ep':>4}  {'reward':>8}  {'x_pos':>6}  {'steps':>6}  {'done':>5}")
-    for i, (rew, x, flag, st, _) in enumerate(results):
-        print(f"    {i+1:>4}  {rew:>8.1f}  {x:>6}  {st:>6}  {'YES' if flag else 'no':>5}")
-    print(f"    {'─'*40}")
-    print(f"    Mean reward      : {np.mean(rewards):8.1f}  ±{np.std(rewards):.1f}")
-    print(f"    Max  reward      : {np.max(rewards):8.1f}")
-    print(f"    Mean x_pos       : {np.mean(x_pos):8.1f}  (level end ~3100)")
-    print(f"    Max  x_pos       : {np.max(x_pos):8.0f}")
-    print(f"    Completion rate  : {100*np.mean(flags):8.1f}%")
-    print(f"    Mean ep length   : {np.mean(steps):8.1f} steps  ±{np.std(steps):.1f}")
-    print(f"    Inference latency: {np.mean(inf_ms):8.2f} ms/step")
 
 
 def main(args):
