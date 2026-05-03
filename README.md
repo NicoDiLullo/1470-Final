@@ -17,18 +17,60 @@ The pptx we presented with playthrough videos can be found [here](https://drive.
 
 ## General Repository Structure:
 
+# benchmarks
+Our benchmarks. benchmarks.py compares RAM and CNN PPOs. DQN also adds DQNs in addition
+to the other two.
+
+# cnnPPO
+Our CNN PPO implementation. Our best CNN model (~50m steps and 15 hours) is here as well
+(bestCNN.pt). Trained on Nico's laptop (M3 Max).
+
+# core
+core.py is a set of abstractions from other classes, for extenisibility, and "good" SWE practice (thanks Andy van Dam). 
+
+Also, video recording utils.
+
+# dqn
+Our DQN implemntation (and best model). Trained on a T4 on Colab.
+
+# otherOptimizations
+Our futile attempts of quantizing and compiling our CNN model to make it more performant. 
+Results included in the ipynb.
+
+Also included is to_quant.pt (a copy of bestCNN.pt) that is needed to run it. Originally run on a T4 Colab GPU for fairness; fp16 is not designed for CPU acceleration (I guess the
+other way lol).
+
+# plots
+Training plots. Had some issues with TensorBoard, so they are missing some data, but the shape is pretty informative nonetheless.
+
+# ramPPO.
+Our ramPPO implementation (ram_ppo.py). Also contains our best RAM PPO model (ppo_final.pt).
+Trained on Nico's laptop (M3 Max) in ~4 hours for 80 million iterations.
 
 ## Other implementation details
-Our code is somewhat commented, and our writeup renders some of this redundant, but here are
-some interesting implementation details. 
+Our code is somewhat commented (variably by author, yes; one of us really write like that),and our writeup renders some of this redundant, here is the general gist of each (lifted from our poster). 
 
 # RAM PPO
+128-dimensional NES RAM features, encoding Mario's position, velocity, enemy locations, and game state are passed through a two-layer MLP into separate policy and value heads trained with PPO.
+
+Was originally written as an optimization for CNN PPO.
 
 # CNN PPO
+Four stacked grayscale frames are processed through a three-layer CNN into a 512-dim shared representation, which feeds separate policy and value heads trained end-to-end with PPO.
+
+We also tried quantizing to various precisions, compiling, custom rewards, entropy tuning, and various vectored training optimizations. 
+
+Quantizing to float16 slightly improved model size at the cost of throughput (see otherOptimizations), quantizing to int8 was a waste of time, and compiling was also pretty useless. 
 
 # DQN
+Really high training rewards, really bad 
 
 ## Setup
+
+Incomplete, sorry. Have decent docs from RAM PPO but not much else, but they're all just Python scripts that should run pretty easily. Colab Notebooks should run directly from Colab, though you may need to pass models for some.
+
+The only thing that really matters is that if you want to train something, you run it with
+```--num-envs 8` (or more, if you can). Prepare to not be able to use your computer for a large number of hours!
 
 ```bash
 conda env create -f environment.yml
