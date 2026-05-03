@@ -1,3 +1,8 @@
+'''
+In our effort to be "good" software engineers, we've abstracted some of the
+core logic out from RAM and CNN PPOs. 
+'''
+
 from collections import deque
 
 import gym
@@ -8,24 +13,30 @@ from PIL import Image
 
 
 class SkipWrapper(gym.Wrapper):
-    """Repeat the same action for 'skip' frames and sum rewards."""
 
     def __init__(self, env, skip=4):
         super().__init__(env)
         self._skip = skip
 
     def step(self, action):
+        '''
+        Apply one chosen action for several emulator frames.
+        '''
         total_reward = 0.0
         for _ in range(self._skip):
             obs, reward, terminated, truncated, info = self.env.step(action)
             total_reward += reward
+            #unless, of course, Mario got slimed or something
             if terminated or truncated:
                 break
         return obs, total_reward, terminated, truncated, info
 
 
 class GrayscaleResizeWrapper(gym.ObservationWrapper):
-    """Convert RGB frame to grayscale and resize to 84x84, scaled to [0,1]."""
+    '''
+    Convert RGB frames to grayscale 84x84 images, scaled to [0, 1]. "standard Atari
+    preprocessing" described in our report"
+    '''
 
     def __init__(self, env):
         super().__init__(env)
@@ -39,7 +50,9 @@ class GrayscaleResizeWrapper(gym.ObservationWrapper):
 
 
 class FrameStackWrapper(gym.Wrapper):
-    """Stack the last `n` frames along a new leading axis."""
+    '''
+    Stack the last n frames along a new leading axis.
+    '''
 
     def __init__(self, env, n=4):
         super().__init__(env)
@@ -63,6 +76,13 @@ class FrameStackWrapper(gym.Wrapper):
 
 def compute_ppo_loss(model, obs_b, act_b, old_log_probs_b, advantages_b, returns_b,
                      clip_eps, vf_coef, ent_coef):
+    '''
+    Shared PPO loss used by both the CNN and RAM agents.
+
+    The policy part compares the new log-probabilities to the old ones saved during
+    rollout collection. I think we talk about ratio clipping, our value loss, and entropy bonus in the report.
+    Would be funny if we didn't.
+    '''
     logits, values = model(obs_b)
     dist = Categorical(logits=logits)
     new_log_probs = dist.log_prob(act_b)
