@@ -16,7 +16,8 @@ def record(checkpoint: str, output: str, n_episodes: int = 1, fps: int = 30):
     device = torch.device("cpu")
 
     env = make_single_env()
-    nes_env = _find_nes_env(env)  # source of raw pixel frames
+    #source of raw pixel frames
+    nes_env = _find_nes_env(env)
     obs_dim = env.observation_space.shape[0]
     n_actions = env.action_space.n
 
@@ -45,7 +46,7 @@ def record(checkpoint: str, output: str, n_episodes: int = 1, fps: int = 30):
             max_x = max(max_x, info.get("x_pos", 0))
             done = terminated or truncated
 
-        # capture final frame
+        #capture final frame
         frames.append(nes_env.screen.copy())
         flag = info.get("flag_get", False)
         print(f"  ep {ep+1}: reward={ep_reward:.1f}  x_pos={max_x}  {'COMPLETED' if flag else 'died'}")

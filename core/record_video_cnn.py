@@ -29,7 +29,9 @@ def _find_nes_env(env):
 
 
 class RecordingSkipWrapper(gym.Wrapper):
-    """Frame-skip wrapper that also captures every raw frame for smooth video."""
+    '''
+    Frame-skip wrapper that also captures every raw frame for smooth video.
+    '''
     def __init__(self, env, skip=4):
         super().__init__(env)
         self._skip = skip
@@ -104,7 +106,7 @@ def record(checkpoint, output, greedy, n_episodes=1, fps=60):
     print(f"Loaded: {checkpoint}  ({'greedy' if greedy else 'stochastic'})")
 
     env = make_recording_env()
-    skip_wrapper = env.env.env  # JoypadSpace -> RecordingSkipWrapper
+    skip_wrapper = env.env.env
 
     for ep in range(n_episodes):
         skip_wrapper.recorded_frames = []
