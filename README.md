@@ -67,7 +67,7 @@ Really high training rewards, really bad
 
 ## Setup
 
-Incomplete, sorry. Have decent docs from RAM PPO but not much else, but they're all just Python scripts that should run pretty easily. Colab Notebooks should run directly from Colab, though you may need to pass models for some.
+Incomplete, sorry. Have decent docs from RAM & CNN PPO, benchmarks, and some optimizations, but not much else, but they're all just Python scripts that should run pretty easily. Colab Notebooks should run directly from Colab, though you may need to pass models for some.
 
 The only thing that really matters is that if you want to train something, you run it with
 ```--num-envs 8` (or more, if you can). Prepare to not be able to use your computer for a large number of hours!
@@ -88,8 +88,7 @@ You should expect FPS on the order of 4400
 
 **CNN PPO:**
 ```bash
-cd cnnPPO
-conda run --no-capture-output -n csci1470 main.py --num-envs 8 --no-tb
+conda run --no-capture-output -n csci1470 python cnnPPO/main.py --num-envs 8 --no-tb
 ```
 
 Key options:
@@ -98,6 +97,18 @@ Key options:
 - `--run-name my_run` — name for TensorBoard logs
 - `--load path/to/checkpoint.pt` — resume from a checkpoint
 - `--no-tb` — disable TensorBoard logging
+
+**Benchmarks:**
+```bash
+conda run --no-capture-output -n csci1470 python benchmarks/benchmarks.py 
+conda run --no-capture-output -n csci1470 python benchmarks/dqn_bench.py
+```
+
+**Videos:**
+```bash
+conda run --no-capture-output -n csci1470 python core/record_video_ram.py --checkpoint ramPPO/ppo_final.pt --output play_ram.mp4
+conda run --no-capture-output -n csci1470 python core/record_video_cnn.py --checkpoint cnnPPO/bestCNN.pt --greedy-output greedy_cnn.mp4 --stochastic-output stochastic_cnn.mp4
+```
 
 **Monitoring training:**
 ```bash
